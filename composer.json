@@ -1,5 +1,6 @@
 {
     "name": "brady/tools",
+    "description": "brady tools",
     "require": {
         "php": "^7.2",
         "ext-json": "*"
