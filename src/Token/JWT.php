@@ -1,131 +1,181 @@
 <?php
 
+
 namespace Brady\Token;
 
 
 class JWT
 {
+	public $expireTime = 24 * 3600 * 7;
+	public $secretKey = "123456";
+	public $alg = "HS256";
+	public $typ = "JWT";
+	public $algMethod = "sha256";
 
-    //使用HMAC生成信息摘要时所使用的密钥
-    private static $key = 'key';
-    private static $expireTime = 24 * 3600 * 7;
+	public $header;
 
+	/**
+	 * JWT constructor.
+	 * @param int $expireTime
+	 * @param string $secretKey
+	 * @param string $alg
+	 * @param string $typ
+	 */
+	public function __construct($secretKey = "",$expireTime = 0)
+	{
+		if (!empty($expireTime)) $this->expireTime = $expireTime;
 
-    //头部
-    private static $header = array(
-        'alg' => 'HS256', //生成signature的算法
-        'typ' => 'JWT'    //类型
-    );
+		if (!empty($secretKey)) $this->secretKey = $secretKey;
 
+		$this->header = [
+			'alg' => $this->alg, //生成signature的算法
+			'typ' => $this->typ    //类型
+		];
+	}
 
-    /**
-     * 获取jwt token
-     * @param array $payload jwt载荷   格式如下非必须
-     * [
-     *  'iss'=>'jwt_admin',  //该JWT的签发者
-     *  'iat'=>time(),  //签发时间
-     *  'exp'=>time()+7200,  //过期时间
-     *  'nbf'=>time()+60,  //该时间之前不接收处理该Token
-     *  'sub'=>'www.admin.com',  //面向的用户
-     *  'jti'=>md5(uniqid('JWT').time())  //该Token唯一标识
-     * ]
-     * @return bool|string
-     */
-    public static function getToken(array $payload)
-    {
-        $payloadCommon = array('iss' => 'admin', 'iat' => time(), 'exp' => time() + 7200, 'nbf' => time(), 'sub' => 'www.baidu.com', 'jti' => md5(uniqid('JWT') . time()));
+	/**
+	 * @return int
+	 */
+	public function getExpireTime(): int
+	{
+		return $this->expireTime;
+	}
 
-        foreach($payload as $key=>$item){
-            if(in_array($key,['iss','admin','iat','exp','nbf','sub','jti'])){
-                unset($payloadCommon[$key]);
-            }
-        }
+	/**
+	 * @param int $expireTime
+	 */
+	public function setExpireTime(int $expireTime)
+	{
+		$this->expireTime = $expireTime;
+	}
 
-        $payload = array_merge($payload, $payloadCommon);
-        $base64header = self::base64UrlEncode(json_encode(self::$header, JSON_UNESCAPED_UNICODE));
-        $base64payload = self::base64UrlEncode(json_encode($payload, JSON_UNESCAPED_UNICODE));
-        return $base64header . '.' . $base64payload . '.' . self::signature($base64header . '.' . $base64payload, self::$key, self::$header['alg']);
-    }
+	/**
+	 * @return string
+	 */
+	public function getSecretKey(): string
+	{
+		return $this->secretKey;
+	}
 
-    /**
-     * 验证token是否有效,默认验证exp,nbf,iat时间
-     * @param string $Token 需要验证的token
-     * @return bool|string
-     */
-    public static function verifyToken(string $Token)
-    {
-        $tokens = explode('.', $Token);
-        if (count($tokens) != 3)
-            return false;
+	/**
+	 * @param string $secretKey
+	 */
+	public function setSecretKey(string $secretKey)
+	{
+		$this->secretKey = $secretKey;
+	}
 
-        list($base64header, $base64payload, $sign) = $tokens;
+	/**
+	 * @return string
+	 */
+	public function getAlg(): string
+	{
+		return $this->alg;
+	}
 
-        //获取jwt算法
-        $base64decodeheader = json_decode(self::base64UrlDecode($base64header), JSON_OBJECT_AS_ARRAY);
-        if (empty($base64decodeheader['alg']))
-            return false;
+	/**
+	 * @param string $alg
+	 */
+	public function setAlg(string $alg)
+	{
+		$this->alg = $alg;
+	}
 
-        //签名验证
-        if (self::signature($base64header . '.' . $base64payload, self::$key, $base64decodeheader['alg']) !== $sign)
-            return false;
+	/**
+	 * @return string
+	 */
+	public function getTyp(): string
+	{
+		return $this->typ;
+	}
 
-        $payload = json_decode(self::base64UrlDecode($base64payload), JSON_OBJECT_AS_ARRAY);
+	/**
+	 * @param string $typ
+	 */
+	public function setTyp(string $typ)
+	{
+		$this->typ = $typ;
+	}
 
-        //签发时间大于当前服务器时间验证失败
-        if (isset($payload['iat']) && $payload['iat'] > time())
-            return false;
+	/**
+	 * Encodes to base64url
+	 *
+	 * @param string $data
+	 * @return string
+	 */
+	public function base64UrlEncode($data)
+	{
+		return str_replace('=', '', strtr(base64_encode($data), '+/', '-_'));
+	}
 
-        //过期时间小宇当前服务器时间验证失败
-        if (isset($payload['exp']) && $payload['exp'] < time())
-            return false;
+	/**
+	 * Decodes from base64url
+	 *
+	 * @param string $data
+	 * @return string
+	 */
+	public function base64UrlDecode($data)
+	{
+		if ($remainder = strlen($data) % 4) {
+			$data .= str_repeat('=', 4 - $remainder);
+		}
 
-        //该nbf时间之前不接收处理该Token
-        if (isset($payload['nbf']) && $payload['nbf'] > time())
-            return false;
+		return base64_decode(strtr($data, '-_', '+/'));
+	}
 
-        return $payload;
-    }
+	/**
+	 * HMACSHA256签名   https://jwt.io/  中HMACSHA256签名实现
+	 * @param string $input 为base64UrlEncode(header).".".base64UrlEncode(payload)
+	 * @param string $key 秘钥
+	 * @param string $alg 算法方式
+	 * @return mixed
+	 */
+	private function signature(string $input, string $key)
+	{
 
-    /**
-     * HMACSHA256签名   https://jwt.io/  中HMACSHA256签名实现
-     * @param string $input 为base64UrlEncode(header).".".base64UrlEncode(payload)
-     * @param string $key
-     * @param string $alg 算法方式
-     * @return mixed
-     */
-    private static function signature(string $input, string $key, string $alg = 'HS256')
-    {
-        $alg_config = array(
-            'HS256' => 'sha256'
-        );
-        // https://www.php.net/manual/zh/function.hash-hmac.php
-        return self::base64UrlEncode(hash_hmac($alg_config[$alg], $input, $key, true));
-    }
+		// https://www.php.net/manual/zh/function.hash-hmac.php
+		return $this->base64UrlEncode(hash_hmac($this->algMethod, $input, $key, true));
+	}
 
+	/**
+	 * 获取 token
+	 * @param array $payload
+	 * @return string
+	 */
+	public function getToken(array $payload)
+	{
+		$payload['expireTime'] = time()+ $this->expireTime;
 
-    /**
-     * Encodes to base64url
-     *
-     * @param string $data
-     * @return string
-     */
-    public static function base64UrlEncode($data)
-    {
-        return str_replace('=', '', strtr(base64_encode($data), '+/', '-_'));
-    }
+		$payload = array_merge($payload, $payload);
+		$base64header = $this->base64UrlEncode(json_encode($this->header, JSON_UNESCAPED_UNICODE));
+		$base64payload = $this->base64UrlEncode(json_encode($payload, JSON_UNESCAPED_UNICODE));
+		return $base64header . '.' . $base64payload . '.' . $this->signature($base64header . '.' . $base64payload, $this->secretKey);
+	}
 
-    /**
-     * Decodes from base64url
-     *
-     * @param string $data
-     * @return string
-     */
-    public static function base64UrlDecode($data)
-    {
-        if ($remainder = strlen($data) % 4) {
-            $data .= str_repeat('=', 4 - $remainder);
-        }
+	public function validateToken($token)
+	{
+		$tokens = explode('.', $token);
 
-        return base64_decode(strtr($data, '-_', '+/'));
-    }
+		if (count($tokens) != 3)
+			return false;
+
+		list($base64header, $base64payload, $sign) = $tokens;
+
+		//获取jwt算法
+		$base64decodeheader = json_decode($this->base64UrlDecode($base64header), JSON_OBJECT_AS_ARRAY);
+		if (empty($base64decodeheader['alg']))
+			return false;
+
+		//签名验证
+		if ($this->signature($base64header . '.' . $base64payload, $this->secretKey) !== $sign)
+			return false;
+
+		$payload = json_decode($this->base64UrlDecode($base64payload), JSON_OBJECT_AS_ARRAY);
+
+		//过期时间小宇当前服务器时间验证失败
+		if (isset($payload['expireTime']) && $payload['expireTime'] < time())
+			return false;
+		
+		return $payload;
+	}
 }
